@@ -1,0 +1,98 @@
+---
+title: "Columbus OH Policing"
+author: "Christopher Milne"
+date: "4/10/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(readr)
+library(lubridate)
+library(gt)
+library(sf)
+library(ggthemes)
+library(fs)
+library(gganimate)
+#This loads the libraries needed for all the code used for all the problems.
+
+columbus <- read_rds(url("https://stacks.stanford.edu/file/druid:tr137st9964/tr137st9964_oh_columbus_2019_02_25.rds"))
+
+#This takes the link to the rds file containing the Stanford Open Policing Project data for Columbus OH and stores it as an object for later use.
+
+download.file(url = "https://stacks.stanford.edu/file/druid:tr137st9964/tr137st9964_oh_columbus_shapefiles_2019_02_25.tgz", destfile = "columbus_shapes.tgz", 
+              quiet = TRUE, mode = "wb")
+
+#This downloads the file coontaining the data for the geograpgic location of the different districts in Columbus OH and stores it as the file "shapes.tgz". The mode allows the command on both mac and pc.
+
+untar("columbus_shapes.tgz")
+
+#This takes the downloaded file folder and cleans it up so the data can be acessed.
+
+columbus_shapes_data <- read_sf("oh_columbus_shapefiles/shapes.shp")
+
+#This takes the reformatted data and reads then in as an object so that they can be worked with easily.
+
+file_delete(c("columbus_shapes.tgz", "oh_columbus_shapefiles/"))
+
+#This deletes the now unnecessary files used to generate the the columbus_shapes_data object with the information of the regions of the map.
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+columbus_modified<- columbus %>% 
+#This means the manipulation of the previously created data set done below is saved as an object.
+  filter(arrest_made) %>% 
+#Since arrest_made is a logical variable, this isolates cases where an arrest was made (because this is a variable of interest for the map).
+  mutate(Race = subject_race) %>% 
+#This creates a new column identical to subject_race, but the name is cleaner for when it appears in a legend.
+  filter(!is.na(lng), !is.na(lat)) %>% 
+#This removes all rows without known coordinate locations because they will not be able to be mapped.
+  filter(lng>-83.2) %>% 
+  filter(lng< -82.75) %>% 
+  filter(lat>39.8) %>% 
+  filter(lat<40.17) %>% 
+#This resticts the rows to those where the longtitude and latitude fall in the region indicated by the columbus_shapes_data describing the regions of columbus. This makes the default zoom on the map better suited to make the map easy to interpret.
+  filter(subject_sex == "female") %>% 
+#This isolates cases where the subject involved as female, because for this map I am only interested in the arrets of females.
+  mutate(Race = recode(Race, "hispanic" = "Hispanic", "black" = "Black",
+                     "asian/pacific islander" = "Asian/Pacific Islander",
+                     "other/unknown" = "Other/Unknown", "white" = "White")) %>% 
+#This converts the subject_race categories into categories with nicer looking capitalization so that the race categories look better in the final legend.
+  mutate(month_year = floor_date(date, "month")) 
+#This creates a new variable that takes each date and turns the date into the first of the month. This is so that the annimation can be done where each frame is a month (to make the number of frames more reasonable).
+
+q5 <- st_as_sf(columbus_modified, 
+               coords = c("lng", "lat"), 
+               crs = 4326) 
+#This calls the object columbus_modified and indicates what variables (lng and lat in this case) are to be used as the coordinate variables in the map.
+
+map<-ggplot(data = columbus_shapes_data) +
+#This indicates that we are creating a plot starting with a layer from the columbus_shapes_data we previously created. This map is stored as an object called map.
+  geom_sf() +
+#This sets up the plot to be able to be a map.
+  geom_sf(data = q5, aes(color = Race, fill = Race)) +
+#This adds another layer by using the data from search_locations (which we already specified to use lng and lat) for the coordinate variables. The points in this layer are indicated to be colored to indicate sex.
+  theme_map() + 
+#This indicates that the plot is a map stylistically.
+  labs(title = "Location of Columbus OH Arrests of Women",
+       subtitle = "By Race and Month from January 2012 to December 2016", 
+       caption = "
+
+       Source: Stanford Open Policing Project" )+
+#This gives the map a clear title and subtitle as well as a caption indicating the source.
+  theme_solarized()+
+#This improves the appearance of the map by implementing a pre-created set of visual style choices.
+  theme(axis.text.x = element_text(angle = 90))+
+#This rotates the x axis break labels to sideways so that they aren't too cluttered to be read.
+  transition_states(month_year, state_length = 1, transition_length = 1)+
+#This indicates that indicates that the frames of the animation are determined by the datetime variable month_year.
+  labs(x = "
+       Month and Year Displayed: {closest_state}")
+#This adds a label/note under the x axis inidating what month and year is being shown in a given frame.
+
+animate(map, fps = 1.5)
+#This calls the object map, and slows down the frame rate of the animation so the map animation is more easily interpreted.
+```
